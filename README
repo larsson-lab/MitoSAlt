@@ -1,0 +1,128 @@
+███╗   ███╗██╗████████╗ ██████╗ ███████╗ █████╗ ██╗  ████████╗     ██╗   ██╗   ██╗
+████╗ ████║██║╚══██╔══╝██╔═══██╗██╔════╝██╔══██╗██║  ╚══██╔══╝    ███║  ███║  ███║
+██╔████╔██║██║   ██║   ██║   ██║███████╗███████║██║     ██║       ╚██║  ╚██║  ╚██║
+██║╚██╔╝██║██║   ██║   ██║   ██║╚════██║██╔══██║██║     ██║        ██║   ██║   ██║
+██║ ╚═╝ ██║██║   ██║   ╚██████╔╝███████║██║  ██║███████╗██║        ██║██╗██║██╗██║
+
+
+Written by Swaraj Basu, Xie Xie
+Last updated May 24, 2021
+
+Citation:
+MitoSAlt is free to use. If its use leads to a publication, please cite it!
+
+License:
+The MitoSAlt package is open source and free to use with no restrictions.
+
+Release updates:
+Improved detection of split reads which span the origin of replication as well as contain a deletion/duplication.
+
+Objective:
+MitoSAlt is a PERL script written to identify breakpoints supporting deletions and duplications in the human and mouse mitochondrial genome. The pipeline can be applied on  mitochondrial genomes of other species as well as any circular genome.
+
+Installation:
+MitoSAlt runs on a linux distribution and requires Perl and R which are usually preinstalled. MitoSAlt uses several external softwares which are seamlessly installed in the MitoSAlt directory by running the "setup.sh" script. Download MitoSAlt zip file and run the following commands in the download directory
+
+$ unzip MitoSAlt1.0.zip
+$ cd MitoSAlt1.0
+$ ./setup.sh
+
+The script downloads and compiles various programs used by MitoSAlt along with human/mouse nuclear and mitochondrial genome (indexed for HISAT2 and LAST aligners). Before installing each program the script asks permission from the end user to skip softwares already installed in the system. However it is recommended to run the setup.sh script in its basic mode for smooth functioning of MitoSAlt (expected time taken is 120 minutes in a system with Intel(R) Xeon(R) 2.70GHz, 16 cores). The setup.sh script also creates the directories to store the results for each run of MitoSAlt.
+
+If the system GCC compiler version is older than 4.7 then there might be issues compiling samtools and last. Please upgrade your GCC to a newer version. For example in CentOS 6, a workaround can be running the following commands 
+
+$ cat /etc/centos-release
+$ gcc --version
+$ sudo yum install centos-release-scl
+$ sudo yum install devtoolset-3-toolchain 
+
+and then before running the setup.sh script run the following command and check the updated GCC version
+$ scl enable devtoolset-3 bash
+$ gcc --version
+
+Configuration:
+The main MitoSAlt script is MitoSAlt.pl (MitoSAlt_SE.pl for single end sequencing). It is dependent on a configuration file (config_<organism>.txt) to obtain the path of all programs it will use along with the parameters to classify deletions and duplications. The software paths are set by default to the bin directory in the MitoSAlt folder (where setup.sh installs all programs) and the genome directory for the human/mouse nuclear and mitochondrial genome. MitoSAlt has pre-defined configuration files for the human and mouse genomes. If the end user wants to test the software on sequencing data from another organism then the nuclear+mitochondria genome and only the mitochondria genome as separate fasta format files must be kept in the "genome" directory followed by indexing using the commands below:
+
+#FOR btindex VARIABLE IN CONFIGURATION FILE
+$ bin/hisat2/hisat2-build -p <threads> genome/<Nuclear + mitochdonria fasta file> genome/<tag for index> 
+
+#FOR lastindex IN CONFIGURATION FILE
+$ bin/last/src/lastdb -uNEAR  genome/<mitochondria fasta file> genome/<tag for index> 
+
+#FOR faindex IN CONFIGURATION FILE
+$ bin/samtools/samtools faidx genome/<Nuclear + mitochdonria fasta file> 
+
+#FOR mtfaindex IN CONFIGURATION FILE
+$ bin/samtools/samtools faidx genome/<mitochondria fasta file> 
+
+The genome size must be updated for the new organism. Further the parameters orihs, orihe, orils and orile representing the start/end of the heavy and the light strand origin need to be specified. The values can be 0 if it is not known for the organism to be used. 
+
+Running:
+The MitoSAlt.pl script takes as input the configuration file, a pair of files in fastq format (paired end sequencing) and a name specific to each run, used for the output. For each run the raw fastq files are aligned to the nuclear + mitochondrial genome, followed by extraction of the potential reads of mitochondrial origin, which are remapped on the mitochondria genome, and the results as stored in bam, bigwig and tabular format. The mapped reads in tabular format are further analyzed by the script to identify reads supporting gapped alignment on the mitochondrial genome which might represent a potential deletion and duplication. For example a default run would look like:
+
+$ perl MitoSAlt.pl <config_file> <fastq file 1> <fastq file 2> <study name>
+
+The configuration file has a "steps" section which can be used to identify deletions/duplications from the same output file using different parameters. If a job is run with a study name "testrun", then the user gets the output files with "testrun" as prefix in bam, bw, indel, log and tab directories. If for the same dataset the end user wants the output at a different heteroplasmy threshold or clustering distance etc, then
+
+- edit the configuration file to introduce the new parameters under the header "SCORING AND FILTERING FEATURES"
+- change the "nu_mt", and "o_mt" parameters changed to "no" in the configuration file.
+- back up files generated in previous runs with the tag "testrun" in "indel", "plot" and "log" folders in a different folder
+- run "MitoSAlt.pl" pipeline again
+Here the script will use the LAST aligned output file "testrun.tab" generated in the previous run along with the updated parameters to generate new results. 
+
+If the "enriched" step is "yes" in the configuration file, then the pipeline assumes that the reads are enriched for MtDNA and hence the "nu_mt" and "cn_mt" steps should be disabled with a "no". 
+
+Output:
+The MitoSAlt outputs consists of bam and bigwig files (bam, bw directory) for visualization of reads coverage along with location of breakpoints in bed format and a .breakpoint file (indel directory) which catalogs the breakpoint positions as 
+chromosome, read name, size, start, end, fragment1 length, fragment2 length, whether paired read maps within threshold distance, distance to paired read, read mapping inverse.
+The last column tells whether the split read fragments are mapped in inverse orientation where the first fragment maps at a higher coordinate in the genome than the second. This is useful to identify duplications later. A tabular file clustering breakpoints representative of a given deletion or duplication (.cluster in indel directory) is also generated with the following columns
+clusterid, read names in cluster, breakpoint starts, breakpoint ends, length fragment mapping to start position, length fragment mapping to end position,number of reads supporting breakpoint, number of wildtype reads overlapping breakpoints, estimated heteroplasmy. 
+
+The output is passed to a R script "delplot.R" which filters the predicted deletions/duplications based on their estimated heteroplasmy (ratio of mutated vs WT reads at a given breakpoint) and the final filtered data in tabular format (indel directory, .tsv suffix) along with a circular plot of the predicted deletions and duplications with a color code to represent the estimated heteroplasmy. The script also identifies potential repeat sequences at the boundary of breakpoint positions.
+
+
+The final output ".tsv" file (indel directory) contains the following columns
+
+sample: Name of sample
+cluster: Name of cluster grouping a set of reads with gapped alignments in a single deletion/duplication
+alt.reads: Number of reads supporting breakpoints within cluster
+ref.reads: Number of wildtype reads overlapping all the breakpoints within a cluster 
+heteroplasmy: Estimated heteroplasmy
+del.start.range: Range of start positions for all the breakpoints falling within a cluster (used to plot the deletions/duplications)
+del.end.range: Range of end positions for all the breakpoints falling within a cluster (used to plot the deletions/duplications)
+delsize: Size of deletion if the reads represent a deletion
+final.event: Classification of the structural alteration as a deletion or duplication
+final.start: Start position based on classification
+final.end: End position based on classification
+final.size: Size of the deletion/duplication based on the final classification
+seq1: Sequence at the 5' breakpoint
+seq2: Sequence at the 3' breakpoint
+direct.repeat: Repeat sequence detected
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
