@@ -19,8 +19,10 @@ HISAT2_URL=ftp://ftp.ccb.jhu.edu/pub/infphilo/hisat2/downloads/hisat2-2.1.0-Linu
 HISAT2_V=hisat2-2.1.0
 BBMAP_URL=https://downloads.sourceforge.net/project/bbmap/BBMap_38.05.tar.gz
 BBMAP_V=bbmap
-LAST_URL=http://last.cbrc.jp/last-941.zip
-LAST_V=last-941
+#LAST_URL=http://last.cbrc.jp/last-941.zip
+#LAST_V=last-941
+LAST_URL=https://gitlab.com/mcfrith/last/-/archive/1650/last-1650.tar.gz
+LAST_V=last-1650
 
 #BAM BED PROCESSING
 BEDTOOLS2_URL=https://github.com/arq5x/bedtools2/releases/download/v2.27.1/bedtools-2.27.1.tar.gz
@@ -94,7 +96,7 @@ if [ "$BASIC" == "no" ]; then
   read MOUSE;
 
   echo -e "\x1b[97;41m Build mouse indexes? (yes/no): \x1b[m"
-  read MINDEX;
+  read MINDEX
 
   echo -e "\x1b[97;41m Install R package Plotrix? (yes/no): \x1b[m"
   read PLOTRIX;
@@ -170,11 +172,12 @@ fi
 
 echo -e "\x1b[97;41m $now:Installing LAST: \x1b[m"
 if [ "$LAST" == "yes" ]; then
-wget -O $TMPFILE $LAST_URL
-unzip -d $PWD $TMPFILE
-rm $TMPFILE
-make -C $LAST_V/src/
-mv $LAST_V bin/last
+    mkdir -p $PWD/third_party/last
+    wget -O $TMPFILE $LAST_URL
+    tar xvzf $TMPFILE -C $PWD/third_party/last
+    rm $TMPFILE
+    make -C $PWD/third_party/last/$LAST_V/src/
+    mv $PWD/third_party/last/$LAST_V bin/last
 fi
 
 echo -e "\x1b[97;41m $now:Installing Samtools: \x1b[m"
@@ -229,7 +232,7 @@ fi
 #BUILD HUMAN INDEXES
 if [ "$HINDEX" == "yes" ]; then
   bin/hisat2/hisat2-build -p $THREADS genome/$HG19_V genome/hg19_g1k
-  bin/last/src/lastdb -uNEAR  genome/human_mt_rCRS genome/$MTRCRS_V
+  bin/last/bin/lastdb -uNEAR  genome/human_mt_rCRS genome/$MTRCRS_V
   bin/samtools/samtools faidx genome/$HG19_V
   bin/samtools/samtools faidx genome/$MTRCRS_V
 fi
@@ -250,7 +253,7 @@ fi
 #BUILD MOUSE INDEXES
 if [ "$MINDEX" == "yes" ]; then
   bin/hisat2/hisat2-build -p $THREADS genome/$M38_V genome/mm10
-  bin/last/src/lastdb -uNEAR  genome/mouse_mt genome/$MTM_V
+  bin/last/bin/lastdb -uNEAR  genome/mouse_mt genome/$MTM_V
   bin/samtools/samtools faidx genome/$M38_V
   bin/samtools/samtools faidx genome/$MTM_V
 fi
