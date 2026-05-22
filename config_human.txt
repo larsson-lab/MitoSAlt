@@ -1,8 +1,8 @@
 #TOOLS
 hisat2 = bin/hisat2/hisat2
-lastal = bin/last/src/lastal
-lastsp = bin/last/src/last-split
-mfcv = bin/last/scripts/maf-convert
+lastal = bin/last/bin/lastal
+lastsp = bin/last/bin/last-split
+mfcv = bin/last/bin/maf-convert
 reformat = bin/bbmap/reformat.sh
 samtools = bin/samtools/samtools
 sambamba = bin/sambamba

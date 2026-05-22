@@ -18,12 +18,44 @@ setLibPaths <- function(libPaths, standAlone = TRUE) {
 
 setLibPaths("bin/",standAlone=FALSE) #add MitoSAlt bin to paths
 
+#check plotrix library
+check.plotrix<-"plotrix" %in% installed.packages()
+
+if(check.plotrix=="FALSE"){
+    cat("Plotrix not installed, installing now!\n")
+    
+    rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
+    if(rversion<=3.5){
+        source("http://bioconductor.org/biocLite.R")
+        biocLite("plotrix")
+    }
+    else if(rversion>3.5){
+	install.packages("plotrix", repos = "http://cran.us.r-project.org")
+    }
+} 
+
+#check RColorBrewer library
+check.RColorBrewer<-"RColorBrewer" %in% installed.packages()
+
+if(check.RColorBrewer=="FALSE"){
+    cat("RColorBrewer not installed, installing now!\n")
+
+    rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
+    if(rversion<=3.5){
+        source("http://bioconductor.org/biocLite.R")
+        biocLite("RColorBrewer")
+    }
+    else if(rversion>3.5){
+        install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
+    }
+}
+
 #check Biostring library
 check.biostring<-"Biostrings" %in% installed.packages()
 
 if(check.biostring=="FALSE"){
     cat("Biostrings not installed, installing now!\n")
-    
+
     rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
     if(rversion<=3.5){
         source("http://bioconductor.org/biocLite.R")
@@ -31,10 +63,12 @@ if(check.biostring=="FALSE"){
     }
     else if(rversion>3.5){
         if (!requireNamespace("BiocManager", quietly = TRUE))
-            install.packages("BiocManager")
+            install.packages("BiocManager", repos = "http://cran.us.r-project.org")
         BiocManager::install("Biostrings",lib="bin")
+        insall.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
     }
-} 
+}
+
 
 #LOAD LIBRARIES
 library(plotrix)
@@ -219,6 +253,7 @@ dat.del.col<-data.frame(value=dat.col$value,col=dat.col$del.col)
 dat.dup.col<-data.frame(value=dat.col$value,col=dat.col$dup.col)
 
 #UPLOAD BREAKPOINT CLUSTERS
+file.info(clsfile)$size
 if(file.info(clsfile)$size>0){
     res <- read.delim(clsfile, header=FALSE,stringsAsFactors=F)
     colnames(res)<-c("cluster","read","del.start","del.end","lfstart","lfend","nread","tread","perc")
