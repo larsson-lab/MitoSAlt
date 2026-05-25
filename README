@@ -21,10 +21,8 @@ Objective:
 MitoSAlt is a PERL script written to identify breakpoints supporting deletions and duplications in the human and mouse mitochondrial genome. The pipeline can be applied on  mitochondrial genomes of other species as well as any circular genome.
 
 Installation:
-MitoSAlt runs on a linux distribution and requires Perl and R which are usually preinstalled. MitoSAlt uses several external softwares which are seamlessly installed in the MitoSAlt directory by running the "setup.sh" script. Download MitoSAlt zip file and run the following commands in the download directory
-
-$ unzip MitoSAlt1.0.zip
-$ cd MitoSAlt1.0
+MitoSAlt runs on a linux distribution and requires Perl and R which are usually preinstalled. MitoSAlt uses several external softwares which are seamlessly installed in the MitoSAlt directory by running the "setup.sh" script. 
+Clone this repository and run:
 $ ./setup.sh
 
 The script downloads and compiles various programs used by MitoSAlt along with human/mouse nuclear and mitochondrial genome (indexed for HISAT2 and LAST aligners). Before installing each program the script asks permission from the end user to skip softwares already installed in the system. However it is recommended to run the setup.sh script in its basic mode for smooth functioning of MitoSAlt (expected time taken is 120 minutes in a system with Intel(R) Xeon(R) 2.70GHz, 16 cores). The setup.sh script also creates the directories to store the results for each run of MitoSAlt.
@@ -98,31 +96,4 @@ final.size: Size of the deletion/duplication based on the final classification
 seq1: Sequence at the 5' breakpoint
 seq2: Sequence at the 3' breakpoint
 direct.repeat: Repeat sequence detected
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
