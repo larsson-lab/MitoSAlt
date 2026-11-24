@@ -1,82 +1,28 @@
-#https://rdrr.io/github/PredictiveEcology/Require/src/R/setLibPaths.R (add MitoSAlt bin to paths)
-setLibPaths <- function(libPaths, standAlone = TRUE) {
-  oldLibPaths <- .libPaths()
-  #libPaths <- checkPath(normPath(libPaths), create = TRUE)#, mustWork = TRUE)
+#PRINT WARNINGS AS THEY OCCUR SO THEY END UP IN THE RUN LOG NEXT TO THE STEP THAT CAUSED THEM
+options(warn=1)
 
-  shim_fun <- .libPaths
-  shim_env <- new.env(parent = environment(shim_fun))
-  if (isTRUE(standAlone)) {
-    shim_env$.Library <- tail(.libPaths(), 1)
-  } else {
-    shim_env$.Library <- .libPaths()
-  }
-  shim_env$.Library.site <- character()
+#setup.sh INSTALLS R PACKAGES INTO bin/ OF THE MITOSALT DIRECTORY
+script.arg<-grep("^--file=",commandArgs(trailingOnly=FALSE),value=TRUE)
+script.dir<-if(length(script.arg)==1) dirname(normalizePath(sub("^--file=","",script.arg))) else getwd()
+.libPaths(c(file.path(script.dir,"bin"),.libPaths()))
 
-  environment(shim_fun) <- shim_env
-  shim_fun(unique(libPaths))
+required.packages<-c("plotrix","RColorBrewer","Biostrings")
+missing.packages<-required.packages[!sapply(required.packages,requireNamespace,quietly=TRUE)]
+if(length(missing.packages)>0){
+    stop("Missing R packages: ",paste(missing.packages,collapse=", "),
+         ". Install plotrix and RColorBrewer from CRAN and Biostrings from Bioconductor.",call.=FALSE)
 }
-
-setLibPaths("bin/",standAlone=FALSE) #add MitoSAlt bin to paths
-
-#check plotrix library
-check.plotrix<-"plotrix" %in% installed.packages()
-
-if(check.plotrix=="FALSE"){
-    cat("Plotrix not installed, installing now!\n")
-    
-    rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
-    if(rversion<=3.5){
-        source("http://bioconductor.org/biocLite.R")
-        biocLite("plotrix")
-    }
-    else if(rversion>3.5){
-	install.packages("plotrix", repos = "http://cran.us.r-project.org")
-    }
-} 
-
-#check RColorBrewer library
-check.RColorBrewer<-"RColorBrewer" %in% installed.packages()
-
-if(check.RColorBrewer=="FALSE"){
-    cat("RColorBrewer not installed, installing now!\n")
-
-    rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
-    if(rversion<=3.5){
-        source("http://bioconductor.org/biocLite.R")
-        biocLite("RColorBrewer")
-    }
-    else if(rversion>3.5){
-        install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
-    }
-}
-
-#check Biostring library
-check.biostring<-"Biostrings" %in% installed.packages()
-
-if(check.biostring=="FALSE"){
-    cat("Biostrings not installed, installing now!\n")
-
-    rversion<-as.numeric(gsub(".*version\\s(.{3}).*","\\1",R.version.string))
-    if(rversion<=3.5){
-        source("http://bioconductor.org/biocLite.R")
-        biocLite("Biostrings")
-    }
-    else if(rversion>3.5){
-        if (!requireNamespace("BiocManager", quietly = TRUE))
-            install.packages("BiocManager", repos = "http://cran.us.r-project.org")
-        BiocManager::install("Biostrings",lib="bin")
-        insall.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
-    }
-}
-
 
 #LOAD LIBRARIES
-library(plotrix)
-library(RColorBrewer)
-library(Biostrings)
+suppressPackageStartupMessages({
+    library(plotrix)
+    library(RColorBrewer)
+    library(Biostrings)
+})
 
 #Let's read the parameters and see what you put there!
 args <- commandArgs(trailingOnly = TRUE)
+if(length(args)<12){stop("delplot.R expects at least 12 arguments, got ",length(args),call.=FALSE)}
 
 mlength<-as.numeric(args[1])
 ohs<-as.numeric(args[2])
@@ -90,15 +36,17 @@ filename<-args[9]
 hp.limit<-as.numeric(args[10])
 genome.file<-args[11]
 flank<-as.numeric(args[12])
+plot.dir<-if(length(args)>=13) args[13] else "plot"
+tsv.dir<-if(length(args)>=14) args[14] else "indel"
+
+for(f in c(clsfile,bpfile,genome.file)){
+    if(!file.exists(f)){stop("Input file not found: ",f,call.=FALSE)}
+}
 
 #PARAMETERS TO IDENTIFY FLANKING SEQUENCES
 mt.fa = paste(readDNAStringSet(genome.file))
 mlength<-nchar(mt.fa)
 
-endcheck.max<-mlength-20
-endcheck.min<-20
-random.shift<-550
-del.limit<-10000
 mat<-nucleotideSubstitutionMatrix(match = 1, mismatch = -3, baseOnly = TRUE)
 
 #FUNCTION
@@ -242,8 +190,8 @@ plot.col<-brewer.pal(12,"Paired")
 #SET COLOURS AND OUTPUT FILES
 reds<-colorRampPalette(c('lavenderblush','lightpink','lightcoral','indianred','firebrick','#2C0E10FF'),space="rgb")
 blues<-colorRampPalette(c('lightcyan','lightblue1','lightskyblue','royalblue','navyblue','#0f0e2cf0'),space="rgb")
-plotfile<-paste("plot/",filename,".pdf",sep="")
-textfile<-paste("indel/",filename,".tsv",sep="")
+plotfile<-file.path(plot.dir,paste(filename,".pdf",sep=""))
+textfile<-file.path(tsv.dir,paste(filename,".tsv",sep=""))
 
 #SET COLOUR KEY
 dat.col<-data.frame(value=1:10000/100,value.log=log(1:10000/100))
@@ -253,7 +201,7 @@ dat.del.col<-data.frame(value=dat.col$value,col=dat.col$del.col)
 dat.dup.col<-data.frame(value=dat.col$value,col=dat.col$dup.col)
 
 #UPLOAD BREAKPOINT CLUSTERS
-file.info(clsfile)$size
+tsv.written<-FALSE
 if(file.info(clsfile)$size>0){
     res <- read.delim(clsfile, header=FALSE,stringsAsFactors=F)
     colnames(res)<-c("cluster","read","del.start","del.end","lfstart","lfend","nread","tread","perc")
@@ -282,7 +230,12 @@ if(file.info(clsfile)$size>0){
     res.read.bp<-merge(res.read,bp,by="read")
     res.read.bp1<-unique(res.read.bp[,c(2,3,6)])
     
+    n.clusters<-length(unique(res$cluster))
     res<-merge(res,res.read.bp1,by=c("sample","cluster"))
+    #EVERY CLUSTER READ IS WRITTEN TO THE BREAKPOINT FILE, SO A LOST CLUSTER MEANS INCONSISTENT INPUT, NOT A NEGATIVE RESULT
+    if(length(unique(res$cluster))!=n.clusters){
+        stop(n.clusters-length(unique(res$cluster))," of ",n.clusters," clusters in ",clsfile," have no reads in ",bpfile,call.=FALSE)
+    }
     res$delsize<-res$del.end.median-res$del.start.median
     res[res$dloop=="yes",]$delsize<-(mlength-res[res$dloop=="yes",]$del.end.median)+res[res$dloop=="yes",]$del.start.median
 
@@ -493,7 +446,15 @@ if(file.info(clsfile)$size>0){
         
         #SAVE RESULTS
         write.table(res.final,file=textfile,sep="\t",quote=F,row.names=F)
+        tsv.written<-TRUE
     }
+}
+
+#A HEADER-ONLY TSV MEANS NO EVENTS PASSED THE FILTERS (AS OPPOSED TO A FAILED RUN)
+if(!tsv.written){
+    #MUST MATCH THE COLUMNS OF res.final ABOVE
+    tsv.columns<-c("sample","cluster.id","alt.reads","ref.reads","heteroplasmy","del.start.range","del.end.range","del.size","final.event","final.start","final.end","final.size","seq1","seq2","seq")
+    cat(paste(tsv.columns,collapse="\t"),"\n",sep="",file=textfile)
 }
 
 
@@ -509,20 +470,3 @@ if(file.info(clsfile)$size>0){
 #bpfile<-"D.breakpoint"
 #filename<-"test_a"
 #hp.limit<-0.01
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

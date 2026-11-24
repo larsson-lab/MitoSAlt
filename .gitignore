@@ -1,0 +1,10 @@
+# MitoSAlt run outputs and temporary files
+bam/
+bw/
+indel/
+log/
+plot/
+tab/
+tmp_*
+*.Rout
+setup.log
