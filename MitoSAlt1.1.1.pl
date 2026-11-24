@@ -608,7 +608,8 @@ sub process_hash{
       $end = 1 if $end == 0;   
 
       #CHECK IF PAIRED READ EXISTS AND ITS ALIGNMENT POSITION SUPPORTS THE SPLIT READ
-      my $pair = 1 if $read == 2;
+      my $pair;
+      $pair = 1 if $read == 2;
       $pair = 2 if $read == 1;
       my $paired_support = 'no';
       my $distance_paired_support = &paired_support($hash,$id,$read,$pair);
@@ -754,7 +755,8 @@ sub process_hash1{
         next if $size > $deletion_threshold_max;
 
         #CHECK IF PAIRED READ EXISTS AND ITS ALIGNMENT POSITION SUPPORTS THE SPLIT READ
-        my $pair = 1 if $read == 2;
+        my $pair;
+        $pair = 1 if $read == 2;
         $pair = 2 if $read == 1;
         my $paired_support = 'no';
         my $distance_paired_support = &paired_support($hash,$id,$read,$pair);
