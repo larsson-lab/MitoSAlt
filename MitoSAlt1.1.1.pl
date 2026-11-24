@@ -1,8 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use List::Util qw(first min max sum);
-use Data::Dumper;
+use List::Util qw(min max);
 
 #INPUT 
 my $config_file = $ARGV[0];
@@ -1033,5 +1032,3 @@ sub print_result{
   }
   close(CF);
 }
-
-

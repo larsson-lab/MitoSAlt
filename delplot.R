@@ -65,7 +65,7 @@ if(check.biostring=="FALSE"){
         if (!requireNamespace("BiocManager", quietly = TRUE))
             install.packages("BiocManager", repos = "http://cran.us.r-project.org")
         BiocManager::install("Biostrings",lib="bin")
-        insall.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
+        install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
     }
 }
 
@@ -95,10 +95,6 @@ flank<-as.numeric(args[12])
 mt.fa = paste(readDNAStringSet(genome.file))
 mlength<-nchar(mt.fa)
 
-endcheck.max<-mlength-20
-endcheck.min<-20
-random.shift<-550
-del.limit<-10000
 mat<-nucleotideSubstitutionMatrix(match = 1, mismatch = -3, baseOnly = TRUE)
 
 #FUNCTION
@@ -253,7 +249,6 @@ dat.del.col<-data.frame(value=dat.col$value,col=dat.col$del.col)
 dat.dup.col<-data.frame(value=dat.col$value,col=dat.col$dup.col)
 
 #UPLOAD BREAKPOINT CLUSTERS
-file.info(clsfile)$size
 if(file.info(clsfile)$size>0){
     res <- read.delim(clsfile, header=FALSE,stringsAsFactors=F)
     colnames(res)<-c("cluster","read","del.start","del.end","lfstart","lfend","nread","tread","perc")
@@ -509,20 +504,3 @@ if(file.info(clsfile)$size>0){
 #bpfile<-"D.breakpoint"
 #filename<-"test_a"
 #hp.limit<-0.01
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
