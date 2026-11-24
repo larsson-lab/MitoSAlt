@@ -4,7 +4,7 @@ use warnings;
 use List::Util qw(min max);
 use File::Path qw(make_path);
 
-#EXIT CODES: 1 = INVALID INPUT OR CONFIGURATION
+#EXIT CODES: 1 = INVALID INPUT OR CONFIGURATION, 2 = A PIPELINE STEP FAILED
 sub abort{
   my ($code,$msg) = @_;
   print STDERR scalar(localtime).": ERROR: $msg\n";
@@ -16,6 +16,31 @@ sub find_executable{
   my ($cmd) = split(' ',shift);
   return -f $cmd && -x $cmd if $cmd =~ m{/};
   return grep {-f "$_/$cmd" && -x "$_/$cmd"} split(/:/,$ENV{PATH});
+}
+
+#PIPEFAIL SO THAT A FAILING COMMAND INSIDE A PIPE IS NOT MASKED BY THE LAST ONE
+sub run{
+  my ($cmd) = @_;
+  #HOST SHELL STARTUP FILES (E.G. LMOD VIA BASH_ENV UNDER SINGULARITY) MUST NOT RUN FOR EACH COMMAND
+  delete local @ENV{qw(BASH_ENV ENV)};
+  my $rc = system('bash','-o','pipefail','-c',$cmd);
+  abort(2,"Command failed (".cmd_status($rc)."): $cmd") if $rc;
+  return;
+}
+
+#LIKE run() BUT RETURNS THE COMMAND OUTPUT
+sub capture{
+  my ($cmd) = @_;
+  delete local @ENV{qw(BASH_ENV ENV)};
+  open(my $fh,'-|','bash','-o','pipefail','-c',$cmd) or abort(2,"Command failed (could not start: $!): $cmd");
+  my $out = do {local $/; <$fh>};
+  close($fh) or abort(2,"Command failed (".cmd_status($?)."): $cmd");
+  return defined $out ? $out : '';
+}
+
+sub cmd_status{
+  my ($rc) = @_;
+  return $rc == -1 ? "could not start: $!" : ($rc & 127) ? "killed by signal ".($rc & 127) : "exit code ".($rc >> 8);
 }
 
 sub fai_contig_length{
@@ -186,71 +211,71 @@ abort(1,"Configuration check failed:\n  ".join("\n  ",@problems)) if @problems;
 #MAP TO NU+MT GENOME
 if($nu_mt eq 'yes' && $enriched eq 'no'){
   print scalar(localtime).": Map to NU+MT genome\n";
-  if($dna eq 'yes'){system("$hisat2 -p $threads -x $hsindex --no-temp-splicesite --no-spliced-alignment --max-intronlen 5000 -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
-  if($dna eq 'no'){system("$hisat2 -p $threads -x $hsindex -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
+  if($dna eq 'yes'){run("$hisat2 -p $threads -x $hsindex --no-temp-splicesite --no-spliced-alignment --max-intronlen 5000 -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
+  if($dna eq 'no'){run("$hisat2 -p $threads -x $hsindex -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
 
   #EXTRACT READS
   print scalar(localtime).": Extract reads\n";
-  system("$samtools view -@ $threads -bt $faindex tmp_$tag.sam|$samtools sort -@ $threads -o tmp_$tag.bam -"); 
-  system("$samtools index tmp_$tag.bam");
-  system("$samtools idxstats tmp_$tag.bam > indel/$tag.count.txt");
-  system("$samtools view -u -@ $threads -f 12 tmp_$tag.bam > tmp1_$tag.bam"); #flag to extract unmapped reads with mate also unmapped
-  system("$samtools view -u -@ $threads tmp_$tag.bam $refchr> tmp2_$tag.bam");
-  system("$samtools merge -@ $threads tmp_final_$tag.bam tmp1_$tag.bam tmp2_$tag.bam");
+  run("$samtools view -@ $threads -bt $faindex tmp_$tag.sam|$samtools sort -@ $threads -o tmp_$tag.bam -"); 
+  run("$samtools index tmp_$tag.bam");
+  run("$samtools idxstats tmp_$tag.bam > indel/$tag.count.txt");
+  run("$samtools view -u -@ $threads -f 12 tmp_$tag.bam > tmp1_$tag.bam"); #flag to extract unmapped reads with mate also unmapped
+  run("$samtools view -u -@ $threads tmp_$tag.bam $refchr> tmp2_$tag.bam");
+  run("$samtools merge -@ $threads tmp_final_$tag.bam tmp1_$tag.bam tmp2_$tag.bam");
 
   #EXTRACT FASTQ
   print scalar(localtime).": Create FASTQ\n";
-  system("$samtools fastq tmp_final_$tag.bam > tmp_$tag.fq"); #ADDS PAIR /1, /2 TO THE READ NAMES HENCE BBMAP REFORMAT NOT REQUIRED
+  run("$samtools fastq tmp_final_$tag.bam > tmp_$tag.fq"); #ADDS PAIR /1, /2 TO THE READ NAMES HENCE BBMAP REFORMAT NOT REQUIRED
   #system("$reformat in=tmp.fq out=tmp1.fq overwrite=true -uniquenames -Xmx100g &>> log/$tag.log");
 }
 
 if($nu_mt eq 'yes' && $o_mt eq 'yes' && $enriched eq 'no'){
   #REMAP ON MT GENOME
   print scalar(localtime).": Map to MT genome\n";
-  system("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
-  system("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
-  system("$samtools index bam/$tag.bam");
-  system("$mfcv tab tmp_$tag.maf > tab/$tag.tab");
+  run("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
+  run("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
+  run("$samtools index bam/$tag.bam");
+  run("$mfcv tab tmp_$tag.maf > tab/$tag.tab");
 
   #COMPRESS TAB
-  system("gzip -f tab/$tag.tab");
+  run("gzip -f tab/$tag.tab");
 
   #GENERATE BIGWIG
   print scalar(localtime).": Generate Bigwig\n";
-  system("$gcov -split -ibam bam/$tag.bam -bg|sort -k1,1 -k2,2n > tmp_$tag.bg");
-  system("$bg2bw tmp_$tag.bg $mtfaindex bw/$tag.bw");
+  run("$gcov -split -ibam bam/$tag.bam -bg|sort -k1,1 -k2,2n > tmp_$tag.bg");
+  run("$bg2bw tmp_$tag.bg $mtfaindex bw/$tag.bw");
   #unlink("tmp_$tag.bg");
 }
 
 if($nu_mt eq 'no' && $o_mt eq 'yes' && $enriched eq 'yes'){
   #REMAP ON MT GENOME
   print scalar(localtime).": Map to MT genome\n";
-  system("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx100g 2>> log/$tag.log");
-  system("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
-  system("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
-  system("$samtools index bam/$tag.bam");
-  system("$mfcv tab tmp_$tag.maf > tab/$tag.tab");
+  run("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx100g eoom 2>> log/$tag.log");
+  run("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
+  run("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
+  run("$samtools index bam/$tag.bam");
+  run("$mfcv tab tmp_$tag.maf > tab/$tag.tab");
 
   #COMPRESS TAB
-  system("gzip -f tab/$tag.tab");
+  run("gzip -f tab/$tag.tab");
 
   #GENERATE BIGWIG
   print scalar(localtime).": Generate Bigwig\n";
-  system("$gcov -split -ibam bam/$tag.bam -bg|sort -k1,1 -k2,2n > tmp_$tag.bg");
-  system("$bg2bw tmp_$tag.bg $mtfaindex bw/$tag.bw");
+  run("$gcov -split -ibam bam/$tag.bam -bg|sort -k1,1 -k2,2n > tmp_$tag.bg");
+  run("$bg2bw tmp_$tag.bg $mtfaindex bw/$tag.bw");
   #unlink("tmp_$tag.bg");
 }
 
 if($cn_mt eq 'yes' && $enriched eq 'no' && $o_mt eq 'yes' && $nu_mt eq 'yes'){
-  system("$sambamba depth window -w $msize bam/$tag.bam|cut -f 1,5 > indel/$tag.cnmt.txt");
-  system("$randomBed -l 1000 -n 3000 -g $gsize > tmp_random_$tag.bed");
-  system("$sambamba depth region -L tmp_random_$tag.bed -t $threads -o tmp_random_$tag.cov tmp_$tag.bam");
-  system("$groupBy -g 5 -c 8 -o mean -i tmp_random_$tag.cov >> indel/$tag.cnmt.txt");
+  run("$sambamba depth window -w $msize bam/$tag.bam|cut -f 1,5 > indel/$tag.cnmt.txt");
+  run("$randomBed -l 1000 -n 3000 -g $gsize > tmp_random_$tag.bed");
+  run("$sambamba depth region -L tmp_random_$tag.bed -t $threads -o tmp_random_$tag.cov tmp_$tag.bam");
+  run("$groupBy -g 5 -c 8 -o mean -i tmp_random_$tag.cov >> indel/$tag.cnmt.txt");
 }
 
 #IDENTIFY DELETIONS/DUPLICATIONS
 if($i_del eq 'yes'){
-  my $infile = "tab/$tag.tab";
+  my $infile = "tab/$tag.tab.gz";
   my $bedfile = "indel/$tag.bed";
   my $breakpointfile = "indel/$tag.breakpoint";
   my $clusterfile = "indel/$tag.cluster";
@@ -275,7 +300,7 @@ if($i_del eq 'yes'){
 
   #PLOT DELETIONS
   print scalar(localtime).":Plot deletions/duplications\n";
-  system("R CMD BATCH --no-save --no-restore \'--args $msize $orihs $orihe $orils $orile $sizelimit indel/$tag.cluster indel/$tag.breakpoint $tag $hplimit $MT_fasta $flank\' delplot.R");
+  run("R CMD BATCH --no-save --no-restore \'--args $msize $orihs $orihe $orils $orile $sizelimit indel/$tag.cluster indel/$tag.breakpoint $tag $hplimit $MT_fasta $flank\' delplot.R");
 }
 
 if($rmtmp eq 'yes'){
@@ -290,8 +315,10 @@ print scalar(localtime).":Finished\n";
 sub check_paired{
   my $check_paired = 0;
   my $path = shift;
-  my $line = `zcat $path|tail -n 1`;
+  my $line = capture("zcat $path|tail -n 1");
   my @elements = split(/\t/, $line);
+  #PAIRED (/1, /2) OR UNPAIRED READ NAMES ARE DETECTED FROM THE LAST LINE ONLY, SO IT MUST BE AN ALIGNMENT ROW
+  abort(2,"Cannot detect paired or unpaired read names: the last line of $path is not an alignment row") if $line =~ /^#/ || @elements < 12;
 
   $check_paired = 1 if $elements[6]=~m/\/.$/;
   return $check_paired;
@@ -301,7 +328,7 @@ sub build_hash{
   my $file = shift;
   my $check_paired = shift;
 
-  open(IN, "gunzip -c $file |") || die "can’t open pipe to $file";
+  open(IN, "gunzip -c $file |") or abort(2,"Cannot read $file: $!");
   my $hash;
   my $check_hash;
   while(<IN>){
@@ -355,7 +382,7 @@ sub build_hash{
     push(@{$hash->{$id}->{$mate}->{lengths}},$length);
   }
   undef $check_hash;
-  close(IN);
+  close(IN) or abort(2,"Failed to read $file");
   return $hash;
 }
 
@@ -409,7 +436,7 @@ sub print_bed{
   my $tag = shift;
   my $refchr = shift;
   my $filename  = "tmp_".$tag."_nosplit.bed";
-  open(ABED,">$filename");
+  open(ABED,">$filename") or abort(2,"Cannot open $filename: $!");
   for my $id (keys %{$hash}){
      #print $id."\n";
  
@@ -424,8 +451,8 @@ sub print_bed{
       print ABED "$refchr\t$start\t$end\t$name\n"; 
     }        
   }
-  system("sort -k2,2n $filename -o $filename");
-  close(ABED);
+  close(ABED) or abort(2,"Cannot write $filename: $!");
+  run("sort -k2,2n $filename -o $filename");
   return $filename;
 }
 
@@ -514,10 +541,10 @@ sub process_hash{
       print BPE "$refchr\t$end\t$end\t$name\t0\t-\n" if $read_check eq 'yes';
     }
   }
-  close(BP);
-  close(BED);
-  close(BPS);
-  close(BPE);
+  close(BP) or abort(2,"Cannot write $breakpointfile: $!");
+  close(BED) or abort(2,"Cannot write $bedfile: $!");
+  close(BPS) or abort(2,"Cannot write $bps: $!");
+  close(BPE) or abort(2,"Cannot write $bpe: $!");
   return $delhash;
 }
 
@@ -531,10 +558,10 @@ sub process_hash1{
 
   my $delhash;
  
-  open(BP,">$breakpointfile");
-  open(BED,">$bedfile");
-  open(BPS,">$bps");
-  open(BPE,">$bpe");
+  open(BP,">$breakpointfile") or abort(2,"Cannot open $breakpointfile: $!");
+  open(BED,">$bedfile") or abort(2,"Cannot open $bedfile: $!");
+  open(BPS,">$bps") or abort(2,"Cannot open $bps: $!");
+  open(BPE,">$bpe") or abort(2,"Cannot open $bpe: $!");
 
   for my $id (keys %{$hash}){
     #print $id."\n";
@@ -942,10 +969,10 @@ sub get_cluster{
   my $bpec = "tmp_".$tag."_bpe.cls";
   my $clusterhash;
 
-  system("$sortBed -i $bps|$clusterBed -s -d $breakthreshold -i stdin > $bpsc");
-  system("$sortBed -i $bpe|$clusterBed -s -d $breakthreshold -i stdin > $bpec");
+  run("$sortBed -i $bps|$clusterBed -s -d $breakthreshold -i stdin > $bpsc");
+  run("$sortBed -i $bpe|$clusterBed -s -d $breakthreshold -i stdin > $bpec");
 
-  open(BPS, "<$bpsc");
+  open(BPS,"<$bpsc") or abort(2,"Cannot open $bpsc: $!");
   my @bps=<BPS>;
   my $bps_hash;
   foreach my $line(@bps){
@@ -955,9 +982,9 @@ sub get_cluster{
     my $clusterid=$fields[6];
     $bps_hash->{$readid} = $clusterid;
   }
-  close(BPS);
+  close(BPS) or abort(2,"Cannot read $bpsc: $!");
 
-  open(BPE, "<$bpec");
+  open(BPE,"<$bpec") or abort(2,"Cannot open $bpec: $!");
   my @bpe=<BPE>;
   my $bpe_hash;
   foreach my $line(@bpe){
@@ -967,7 +994,7 @@ sub get_cluster{
     my $clusterid=$fields[6];
     $bpe_hash->{$readid} = $clusterid;
   }
-  close(BPE);
+  close(BPE) or abort(2,"Cannot read $bpec: $!");
  
   for my $readid(keys %{$delhash}){
     next unless exists $bps_hash->{$readid};
@@ -1002,8 +1029,8 @@ sub build_results{
     my $splitbed_fileS = "tmp_".$tag.".split.start.bed";
     my $splitbed_fileE = "tmp_".$tag.".split.end.bed";
 
-    open(SBEDS,">$splitbed_fileS");
-    open(SBEDE,">$splitbed_fileE");
+    open(SBEDS,">$splitbed_fileS") or abort(2,"Cannot open $splitbed_fileS: $!");
+    open(SBEDE,">$splitbed_fileE") or abort(2,"Cannot open $splitbed_fileE: $!");
 
     for my $readid (keys %{$clusterhash->{$clusterid}}){
       my $breakstart = $clusterhash->{$clusterid}->{$readid}->{breakstart};
@@ -1020,16 +1047,18 @@ sub build_results{
       print SBEDS "$refchr\t$breakstart\t$breakstart\n";
       print SBEDE "$refchr\t$breakend\t$breakend\n";
     }
+    close(SBEDS) or abort(2,"Cannot write $splitbed_fileS: $!");
+    close(SBEDE) or abort(2,"Cannot write $splitbed_fileE: $!");
 
-    system("sort -u -k2,2n -k3 $splitbed_fileS -o $splitbed_fileS");
-    system("sort -u -k2,2n -k3 $splitbed_fileE -o $splitbed_fileE");
+    run("sort -u -k2,2n -k3 $splitbed_fileS -o $splitbed_fileS");
+    run("sort -u -k2,2n -k3 $splitbed_fileE -o $splitbed_fileE");
 
     my $intersectbed_fileS = "tmp_".$tag.".intersect.start.bed";
     my $intersectbed_fileE = "tmp_".$tag.".intersect.end.bed";
 
 
-    system("$intersectBed -wo -sorted -a $nosplitbed_file -b $splitbed_fileS > $intersectbed_fileS");
-    open(IS,"<$intersectbed_fileS");
+    run("$intersectBed -wo -sorted -a $nosplitbed_file -b $splitbed_fileS > $intersectbed_fileS");
+    open(IS,"<$intersectbed_fileS") or abort(2,"Cannot open $intersectbed_fileS: $!");
     while(<IS>){
       my $line = $_;
       chomp($line);
@@ -1045,12 +1074,11 @@ sub build_results{
       $clustercount->{$clusterid}->{wt1}++;
       $clustercheck->{$name}++;
     }
-    close(SBEDS);
-    close(IS);
+    close(IS) or abort(2,"Cannot read $intersectbed_fileS: $!");
     unlink $splitbed_fileS,$intersectbed_fileS;
 
-    system("$intersectBed -wo -sorted -a $nosplitbed_file -b $splitbed_fileE > $intersectbed_fileE");
-    open(IE,"<$intersectbed_fileE");
+    run("$intersectBed -wo -sorted -a $nosplitbed_file -b $splitbed_fileE > $intersectbed_fileE");
+    open(IE,"<$intersectbed_fileE") or abort(2,"Cannot open $intersectbed_fileE: $!");
     while(<IE>){
       my $line = $_;
       chomp($line);
@@ -1066,8 +1094,7 @@ sub build_results{
       $clustercount->{$clusterid}->{wt2}++;
       $clustercheck->{$name}++;
     }
-    close(SBEDE);
-    close(IE);
+    close(IE) or abort(2,"Cannot read $intersectbed_fileE: $!");
     unlink $splitbed_fileE,$intersectbed_fileE;
   }
   return $clustercount;
@@ -1076,7 +1103,7 @@ sub build_results{
 sub print_result{
   my $clustercount = shift;
   my $clusterfile = shift;
-  open(CF,">$clusterfile");
+  open(CF,">$clusterfile") or abort(2,"Cannot open $clusterfile: $!");
 
   for my $clusterid(keys %{$clustercount}){
     my $names = $clustercount->{$clusterid}->{names};
@@ -1106,5 +1133,5 @@ sub print_result{
 
     print CF "$clusterid\t$names_print\t$starts_print\t$ends_print\t$lenstarts_print\t$lenends_print\t$mt\t$mean_wt\t$perc_hp\n";
   }
-  close(CF);
+  close(CF) or abort(2,"Cannot write $clusterfile: $!");
 }
