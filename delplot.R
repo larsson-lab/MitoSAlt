@@ -1,3 +1,6 @@
+#PRINT WARNINGS AS THEY OCCUR SO THEY END UP IN THE RUN LOG NEXT TO THE STEP THAT CAUSED THEM
+options(warn=1)
+
 #setup.sh INSTALLS R PACKAGES INTO bin/ OF THE MITOSALT DIRECTORY
 script.arg<-grep("^--file=",commandArgs(trailingOnly=FALSE),value=TRUE)
 script.dir<-if(length(script.arg)==1) dirname(normalizePath(sub("^--file=","",script.arg))) else getwd()

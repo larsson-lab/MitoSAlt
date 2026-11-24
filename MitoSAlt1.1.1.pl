@@ -4,10 +4,12 @@ use warnings;
 use List::Util qw(min max);
 use File::Path qw(make_path);
 use FindBin qw($Bin);
+use Cwd qw(getcwd);
+use Sys::Hostname qw(hostname);
 
 #RUN SUMMARY log/<study name>.summary.tsv, WRITTEN ON SUCCESS AND ON FAILURE
 my ($summary_file,%summary);
-my @summary_keys = qw(sample mt_reads mt_alignments mt_mean_depth split_reads clusters events_reported);
+my @summary_keys = qw(sample mt_reads mt_alignments mt_mean_depth split_reads clusters events_reported warnings);
 #WRITTEN TO A TEMPORARY FILE AND RENAMED, SO A FAILED WRITE NEVER LEAVES A TRUNCATED SUMMARY; RETURNS FALSE ON FAILURE
 sub write_summary{
   my ($status,$code,$msg) = @_;
@@ -97,12 +99,19 @@ abort(1,"Study name '$tag' may only contain letters, digits, '.', '_' and '-'") 
 
 make_path(qw(bam bw indel log plot tab));
 $summary_file = "log/$tag.summary.tsv";
-%summary = (sample => $tag);
+%summary = (sample => $tag, warnings => 0);
 #A SUMMARY LEFT AT "running" MEANS THE PROCESS WAS KILLED (E.G. SIGKILL BY THE OOM KILLER)
 write_summary('running') or abort(1,"Cannot write $summary_file: $!");
 
-#LOG
-open(STDOUT, "| tee -ai log/$tag.log") or abort(1,"Cannot open log/$tag.log: $!");
+#ONE LOG PER RUN: OUR MESSAGES AND THE STDOUT/STDERR OF EVERY TOOL GO TO log/<study name>.log AND THE TERMINAL
+open(STDOUT,'|-','tee','-i',"log/$tag.log") or abort(1,"Cannot open log/$tag.log: $!");
+open(STDERR,'>&',\*STDOUT) or abort(1,"Cannot redirect STDERR to log: $!");
+$| = 1;
+print scalar(localtime).": MitoSAlt\n";
+print "Command: $0 @ARGV\n";
+print "Host: ".hostname()."\n";
+print "Working directory: ".getcwd()."\n";
+$SIG{__WARN__} = sub {$summary{warnings}++; print STDERR scalar(localtime).": WARNING: $_[0]";};
 
 #PERL ERRORS AND TERMINATION SIGNALS ARE REPORTED AS FAILED STEPS
 $SIG{__DIE__} = sub {return if $^S; my $m = shift; chomp($m); abort(2,"Perl error: $m");};
@@ -251,8 +260,8 @@ abort(1,"Configuration check failed:\n  ".join("\n  ",@problems)) if @problems;
 #MAP TO NU+MT GENOME
 if($nu_mt eq 'yes' && $enriched eq 'no'){
   print scalar(localtime).": Map to NU+MT genome\n";
-  if($dna eq 'yes'){run("$hisat2 -p $threads -x $hsindex --no-temp-splicesite --no-spliced-alignment --max-intronlen 5000 -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
-  if($dna eq 'no'){run("$hisat2 -p $threads -x $hsindex -1 $p1 -2 $p2 -S tmp_$tag.sam 2>> log/$tag.log");}
+  if($dna eq 'yes'){run("$hisat2 -p $threads -x $hsindex --no-temp-splicesite --no-spliced-alignment --max-intronlen 5000 -1 $p1 -2 $p2 -S tmp_$tag.sam");}
+  if($dna eq 'no'){run("$hisat2 -p $threads -x $hsindex -1 $p1 -2 $p2 -S tmp_$tag.sam");}
 
   #EXTRACT READS
   print scalar(localtime).": Extract reads\n";
@@ -297,7 +306,7 @@ if($nu_mt eq 'yes' && $o_mt eq 'yes' && $enriched eq 'no'){
 if($nu_mt eq 'no' && $o_mt eq 'yes' && $enriched eq 'yes'){
   #REMAP ON MT GENOME
   print scalar(localtime).": Map to MT genome\n";
-  run("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx100g eoom 2>> log/$tag.log");
+  run("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx100g eoom");
   abort(3,"No reads after reformatting the input FASTQ files, tmp_$tag.fq is empty") unless -s "tmp_$tag.fq";
   run("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
   run("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
