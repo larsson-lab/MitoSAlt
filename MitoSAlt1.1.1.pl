@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use List::Util qw(min max);
 use File::Path qw(make_path);
+use FindBin qw($Bin);
 
 #EXIT CODES: 1 = INVALID INPUT OR CONFIGURATION, 2 = A PIPELINE STEP FAILED
 sub abort{
@@ -189,7 +190,8 @@ if($cn_mt eq 'yes'){
 if($i_del eq 'yes'){
   push @tools, qw(sortBed clusterBed intersectBed);
   push @files, qw(MT_fasta);
-  push @problems, "R not found in PATH" unless find_executable('R');
+  push @problems, "Rscript not found in PATH" unless find_executable('Rscript');
+  push @problems, "delplot.R not found in $Bin" unless -f "$Bin/delplot.R";
   push @problems, "tab/$tag.tab.gz not found, run with o_mt = yes first" if $o_mt eq 'no' && !-s "tab/$tag.tab.gz";
 }
 my %seen;
@@ -300,7 +302,7 @@ if($i_del eq 'yes'){
 
   #PLOT DELETIONS
   print scalar(localtime).":Plot deletions/duplications\n";
-  run("R CMD BATCH --no-save --no-restore \'--args $msize $orihs $orihe $orils $orile $sizelimit indel/$tag.cluster indel/$tag.breakpoint $tag $hplimit $MT_fasta $flank\' delplot.R");
+  run("Rscript '$Bin/delplot.R' $msize $orihs $orihe $orils $orile $sizelimit indel/$tag.cluster indel/$tag.breakpoint $tag $hplimit $MT_fasta $flank");
 }
 
 if($rmtmp eq 'yes'){
