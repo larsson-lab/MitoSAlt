@@ -198,6 +198,7 @@ dat.del.col<-data.frame(value=dat.col$value,col=dat.col$del.col)
 dat.dup.col<-data.frame(value=dat.col$value,col=dat.col$dup.col)
 
 #UPLOAD BREAKPOINT CLUSTERS
+tsv.written<-FALSE
 if(file.info(clsfile)$size>0){
     res <- read.delim(clsfile, header=FALSE,stringsAsFactors=F)
     colnames(res)<-c("cluster","read","del.start","del.end","lfstart","lfend","nread","tread","perc")
@@ -226,7 +227,12 @@ if(file.info(clsfile)$size>0){
     res.read.bp<-merge(res.read,bp,by="read")
     res.read.bp1<-unique(res.read.bp[,c(2,3,6)])
     
+    n.clusters<-length(unique(res$cluster))
     res<-merge(res,res.read.bp1,by=c("sample","cluster"))
+    #EVERY CLUSTER READ IS WRITTEN TO THE BREAKPOINT FILE, SO A LOST CLUSTER MEANS INCONSISTENT INPUT, NOT A NEGATIVE RESULT
+    if(length(unique(res$cluster))!=n.clusters){
+        stop(n.clusters-length(unique(res$cluster))," of ",n.clusters," clusters in ",clsfile," have no reads in ",bpfile,call.=FALSE)
+    }
     res$delsize<-res$del.end.median-res$del.start.median
     res[res$dloop=="yes",]$delsize<-(mlength-res[res$dloop=="yes",]$del.end.median)+res[res$dloop=="yes",]$del.start.median
 
@@ -437,7 +443,15 @@ if(file.info(clsfile)$size>0){
         
         #SAVE RESULTS
         write.table(res.final,file=textfile,sep="\t",quote=F,row.names=F)
+        tsv.written<-TRUE
     }
+}
+
+#A HEADER-ONLY TSV MEANS NO EVENTS PASSED THE FILTERS (AS OPPOSED TO A FAILED RUN)
+if(!tsv.written){
+    #MUST MATCH THE COLUMNS OF res.final ABOVE
+    tsv.columns<-c("sample","cluster.id","alt.reads","ref.reads","heteroplasmy","del.start.range","del.end.range","del.size","final.event","final.start","final.end","final.size","seq1","seq2","seq")
+    cat(paste(tsv.columns,collapse="\t"),"\n",sep="",file=textfile)
 }
 
 
