@@ -374,11 +374,13 @@ if($i_del eq 'yes'){
   $summary{events_reported} = count_lines($tsvfile) - 1;
 }
 
+#EXACT NAMES: A GLOB SUCH AS tmp_S1* WOULD ALSO REMOVE THE FILES OF SAMPLE S10 IN THE SAME DIRECTORY
 if($rmtmp eq 'yes'){
-  if($nu_mt eq 'yes'){system("rm tmp_$tag* tmp1_$tag* tmp2_$tag* tmp_final_$tag*");}
-  if($o_mt eq 'yes' && $enriched eq 'yes'){if(glob("tmp_$tag*")){system("rm tmp_$tag*");}}
-  if($i_del eq 'yes'){if(glob("tmp_$tag*")){system("rm tmp_$tag*");}}
-  if($cn_mt eq 'yes'){system("rm tmp_random_$tag*");}
+  my @tmp_sample = ((map {"tmp_$tag.$_"} qw(sam bam bam.bai fq maf bg)),(map {"tmp_${tag}$_"} qw(_nosplit.bed _bps.bed _bpe.bed _bps.cls _bpe.cls .split.start.bed .split.end.bed .intersect.start.bed .intersect.end.bed)));
+  if($nu_mt eq 'yes'){unlink(@tmp_sample,"tmp1_$tag.bam","tmp2_$tag.bam","tmp_final_$tag.bam");}
+  if($o_mt eq 'yes' && $enriched eq 'yes'){unlink @tmp_sample;}
+  if($i_del eq 'yes'){unlink @tmp_sample;}
+  if($cn_mt eq 'yes'){unlink("tmp_random_$tag.bed","tmp_random_$tag.cov");}
 }
 
 write_summary('ok',0) or abort(2,"Cannot write $summary_file: $!");
