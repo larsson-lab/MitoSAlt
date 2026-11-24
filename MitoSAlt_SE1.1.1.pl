@@ -2,24 +2,51 @@
 use strict;
 use warnings;
 use List::Util qw(min max);
+use File::Path qw(make_path);
 
-#INPUT 
+#EXIT CODES: 1 = INVALID INPUT OR CONFIGURATION
+sub abort{
+  my ($code,$msg) = @_;
+  print STDERR scalar(localtime).": ERROR: $msg\n";
+  exit $code;
+}
+
+#CONFIG TOOL ENTRIES CAN BE COMMANDS WITH ARGUMENTS, E.G. "bedtools sort"
+sub find_executable{
+  my ($cmd) = split(' ',shift);
+  return -f $cmd && -x $cmd if $cmd =~ m{/};
+  return grep {-f "$_/$cmd" && -x "$_/$cmd"} split(/:/,$ENV{PATH});
+}
+
+sub fai_contig_length{
+  my ($fai,$contig) = @_;
+  open(my $fh,'<',$fai) or return 0;
+  while(<$fh>){my @f = split /\t/; return $f[1] if $f[0] eq $contig;}
+  return 0;
+}
+
+#INPUT
 my $config_file = $ARGV[0];
 my $p1 = $ARGV[1];
 my $tag = $ARGV[2];
 
+my $usage = "usage: perl $0 <config_file> <fastq file> <study name>";
+abort(1,"Configuration file missing, $usage") unless $config_file;
+abort(1,"Read file missing, $usage") unless $p1;
+abort(1,"Study name not given, $usage") unless $tag;
+#THE STUDY NAME IS USED UNQUOTED IN SHELL COMMANDS AND FILE NAMES
+abort(1,"Study name '$tag' may only contain letters, digits, '.', '_' and '-'") unless $tag =~ /^[\w.-]+$/;
+
+make_path(qw(bam bw indel log plot tab));
+
 #LOG
-open (STDOUT, "| tee -ai log/$tag.log");
+open(STDOUT, "| tee -ai log/$tag.log") or abort(1,"Cannot open log/$tag.log: $!");
 
-my $usage = "usage: perl mitopoint.pl <config_file> <fastq file> <study name>";
-die "Configuration file missing, $usage" unless $config_file;
-die "Read file missing, $usage" unless $p1;
-die "Study name not given, $usage" unless $tag;
-
-die "check path to fastq 1, script exit.\n" unless -e $p1;
+abort(1,"Configuration file not found: $config_file") unless -f $config_file;
+abort(1,"FASTQ file not found or empty: $p1") unless -s $p1;
 
 #LOAD CONFIGURATION FILE
-open(CONFIG, "<$config_file");
+open(CONFIG, "<$config_file") or abort(1,"Cannot read configuration file $config_file: $!");
 my $User_Preferences;
 while (<CONFIG>) {
     chomp;                  # no newline
@@ -31,7 +58,19 @@ while (<CONFIG>) {
     $User_Preferences->{$var} = $value;
     my $line = $_;
     print $line."\n";
-} 
+}
+close(CONFIG) or abort(1,"Cannot read configuration file $config_file: $!");
+
+my @step_keys = qw(dna enriched nu_mt rmtmp o_mt i_del cn_mt);
+my @param_keys = qw(threads refchr msize exclude orihs orihe orils orile score_threshold evalue_threshold split_length paired_distance deletion_threshold_min deletion_threshold_max breakthreshold cluster_threshold breakspan sizelimit hplimit flank split_distance_threshold);
+my @missing = grep {!defined $User_Preferences->{$_} || $User_Preferences->{$_} eq ''} (@step_keys,@param_keys);
+abort(1,"Missing keys in $config_file: @missing") if @missing;
+for my $key (@step_keys){
+  abort(1,"Key '$key' in $config_file must be 'yes' or 'no', got '$User_Preferences->{$key}'") unless $User_Preferences->{$key} =~ /^(yes|no)$/;
+}
+#NON-NUMERIC VALUES WOULD BE USED AS 0 OR A NUMERIC PREFIX WITHOUT AN ERROR
+my @not_numeric = grep {$_ ne 'refchr' && $User_Preferences->{$_} !~ /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/} @param_keys;
+abort(1,"Keys in $config_file must be numbers: ".join(", ",map {"$_ = '$User_Preferences->{$_}'"} @not_numeric)) if @not_numeric;
 
 #PROGRAMS
 my $hisat2 = $User_Preferences->{hisat2};
@@ -99,9 +138,46 @@ my $cn_mt = $User_Preferences->{cn_mt}; #ESTIMATION OF MT DNA COPY NUMBER
 
 #EXIT IF THE CONFIGURATION STEPS DO NOT MATCH
 if(($nu_mt eq 'yes' && $enriched eq 'yes')||($nu_mt eq 'no' && $o_mt eq 'no' && $i_del eq 'no')||($cn_mt eq 'yes' && $nu_mt eq 'no')||($cn_mt eq 'yes' && $o_mt eq 'no')||($i_del eq 'yes' && $o_mt eq 'no' && $nu_mt eq 'yes')){
-  print scalar(localtime).": Check config file for correct STEP combination\n";
-  die;
+  abort(1,"Invalid STEPS combination in $config_file (enriched=$enriched nu_mt=$nu_mt o_mt=$o_mt i_del=$i_del cn_mt=$cn_mt), see README");
 }
+
+#CHECK TOOLS AND REFERENCE FILES NEEDED BY THE ENABLED STEPS
+my (@tools,@files,@problems);
+if($nu_mt eq 'yes'){
+  push @tools, qw(hisat2 samtools);
+  push @files, qw(faindex);
+  push @problems, "hsindex: no HISAT2 index found at $hsindex" unless (-s "$hsindex.1.ht2" || -s "$hsindex.1.ht2l");
+}
+if($o_mt eq 'yes'){
+  push @tools, qw(lastal lastsp mfcv samtools gcov bg2bw);
+  push @files, qw(mtfaindex);
+  push @problems, "lastindex: no LAST index found at $lastindex" unless -s "$lastindex.prj";
+}
+if($cn_mt eq 'yes'){
+  push @tools, qw(sambamba randomBed groupBy);
+  push @files, qw(gsize);
+}
+if($i_del eq 'yes'){
+  push @tools, qw(sortBed clusterBed intersectBed);
+  push @files, qw(MT_fasta);
+  push @problems, "R not found in PATH" unless find_executable('R');
+  push @problems, "tab/$tag.tab.gz not found, run with o_mt = yes first" if $o_mt eq 'no' && !-s "tab/$tag.tab.gz";
+}
+my %seen;
+for my $key (grep {!$seen{$_}++} @tools){
+  my $cmd = $User_Preferences->{$key};
+  if(!defined $cmd || $cmd eq ''){push @problems, "$key: missing from configuration"; next;}
+  push @problems, "$key: '$cmd' not found or not executable" unless find_executable($cmd);
+}
+for my $key (@files){
+  my $file = $User_Preferences->{$key};
+  if(!defined $file || $file eq ''){push @problems, "$key: missing from configuration"; next;}
+  push @problems, "$key: file not found or empty: $file" unless -s $file;
+}
+#A WRONG CONTIG NAME (E.G. MT VS chrM) OTHERWISE GIVES EMPTY RESULTS WITHOUT ANY ERROR
+push @problems, "refchr '$refchr' is not a contig in $faindex" if $nu_mt eq 'yes' && -s $faindex && !fai_contig_length($faindex,$refchr);
+push @problems, "refchr '$refchr' is not a contig in $mtfaindex" if $o_mt eq 'yes' && -s $mtfaindex && !fai_contig_length($mtfaindex,$refchr);
+abort(1,"Configuration check failed:\n  ".join("\n  ",@problems)) if @problems;
 
 #MAP TO NU+MT GENOME
 if($nu_mt eq 'yes' && $enriched eq 'no'){
