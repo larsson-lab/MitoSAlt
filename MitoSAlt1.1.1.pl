@@ -175,6 +175,9 @@ my $MT_fasta = $User_Preferences->{MT_fasta};
 
 #COMPUTATION
 my $threads = $User_Preferences->{threads};
+#OPTIONAL: JAVA HEAP IN GB FOR BBMAP REFORMAT (ENRICHED MODE); SAME KEY AS THE NF-CORE/RAREDISEASE PATCH
+my $javamem = (defined $User_Preferences->{javamem} && $User_Preferences->{javamem} ne '') ? $User_Preferences->{javamem} : 100;
+abort(1,"Key 'javamem' in $config_file must be a whole number of GB, got '$javamem'") unless $javamem =~ /^[1-9]\d*$/;
 
 #MITOCHONDRIA FEATURES
 my $refchr = $User_Preferences->{refchr};
@@ -306,7 +309,7 @@ if($nu_mt eq 'yes' && $o_mt eq 'yes' && $enriched eq 'no'){
 if($nu_mt eq 'no' && $o_mt eq 'yes' && $enriched eq 'yes'){
   #REMAP ON MT GENOME
   print scalar(localtime).": Map to MT genome\n";
-  run("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx100g eoom");
+  run("$reformat in=$p1 in2=$p2 out=tmp_$tag.fq overwrite=true addslash=t trimreaddescription=t spaceslash=f -Xmx${javamem}g eoom");
   abort(3,"No reads after reformatting the input FASTQ files, tmp_$tag.fq is empty") unless -s "tmp_$tag.fq";
   run("$lastal -Q1 -e80 -P$threads $lastindex tmp_$tag.fq|$lastsp > tmp_$tag.maf");
   run("$mfcv sam -d tmp_$tag.maf|$samtools view -@ $threads -bt $mtfaindex -|$samtools sort -@ $threads -o bam/$tag.bam -");
