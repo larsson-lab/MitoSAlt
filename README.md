@@ -15,7 +15,7 @@ MitoSAlt is free to use. If its use leads to a publication, please cite it!
 
 ## License
 
-The MitoSAlt package is open source and free to use with no restrictions.
+The MitoSAlt package is open source and licensed under MIT License.
 
 ## Release updates
 
