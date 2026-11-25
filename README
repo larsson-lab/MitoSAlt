@@ -12,7 +12,7 @@ Citation:
 MitoSAlt is free to use. If its use leads to a publication, please cite it!
 
 License:
-The MitoSAlt package is open source and free to use with no restrictions.
+The MitoSAlt package is open source and licensed under the MIT Lincense.
 
 Release updates:
 Improved detection of split reads which span the origin of replication as well as contain a deletion/duplication.
